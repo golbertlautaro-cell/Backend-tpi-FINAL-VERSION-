@@ -1,0 +1,28 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ms-solicitudes
+  datasource:
+    url: jdbc:postgresql://localhost:5432/solicitudes_db
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+    open-in-view: false
+
+services:
+  logistica:
+    url: http://localhost:8081
+
+google:
+  maps:
+    api-key: PEGA_TU_API_KEY_AQUI
+    base-url: https://maps.googleapis.com/maps/api

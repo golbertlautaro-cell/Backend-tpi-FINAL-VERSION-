@@ -1,0 +1,110 @@
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: tpi-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: logistica_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tpi-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Microservicio de Logística
+  ms-logistica:
+    build:
+      context: ./ms-logistica
+      dockerfile: Dockerfile
+    container_name: ms-logistica
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/logistica_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://host.docker.internal:8090/realms/tpi-realm
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - tpi-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8081/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Keycloak - OAuth2/OIDC Provider
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0.7
+    container_name: keycloak-tpi
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin123
+      KC_PROXY: edge
+      KC_HOSTNAME: host.docker.internal
+      KC_HOSTNAME_PORT: 8090
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8090:8080"
+    networks:
+      - tpi-network
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080;echo OK >&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    command: start-dev
+
+  # Microservicio de Solicitudes
+  ms-solicitudes:
+    build:
+      context: ./ms-solicitudes
+      dockerfile: Dockerfile
+    container_name: ms-solicitudes
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/solicitudes_db
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_JPA_SHOW_SQL: "true"
+      MS_LOGISTICA_URL: http://ms-logistica:8081
+      SERVER_PORT: 8080
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://host.docker.internal:8090/realms/tpi-realm
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ms-logistica:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    networks:
+      - tpi-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  tpi-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
